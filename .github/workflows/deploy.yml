@@ -1,0 +1,48 @@
+name: Deploy Telemetry Dashboard to AWS
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Install Dependencies & Check Syntax
+      run: |
+        python -m pip install --upgrade pip
+        pip install streamlit pandas plotly ollama pyarrow pytest
+
+    - name: Deploy to AWS EC2 via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          cd ~/assetto_corsa_gym
+          git pull origin main
+          source venv/bin/activate
+          pip install -r requirements.txt || pip install streamlit pandas plotly ollama pyarrow
+          
+          # Gracefully restart Streamlit inside your existing tmux session
+          tmux send-keys -t dashboard C-c
+          tmux send-keys -t dashboard "cd ~/assetto_corsa_gym && source venv/bin/activate && streamlit run dashboard.py --server.port 8501 --server.address 127.0.0.1" C-m
+
+    - name: Post-Deployment Smoke Test
+      uses: cygnetdigital/wait-for-response@v2.0.0
+      with:
+        url: 'https://telemetry.samuelojo.tech'
+        response_code: 200
+        timeout: 30
+        interval: 5
