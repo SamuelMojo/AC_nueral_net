@@ -40,9 +40,16 @@ jobs:
           tmux send-keys -t dashboard "cd ~/assetto_corsa_gym && source venv/bin/activate && streamlit run dashboard.py --server.port 8501 --server.address 127.0.0.1" C-m
 
     - name: Post-Deployment Smoke Test
-      uses: cygnetdigital/wait-for-response@v2.0.0
-      with:
-        url: 'https://telemetry.samuelojo.tech'
-        response_code: 200
-        timeout: 30
-        interval: 5
+      run: |
+        echo "Testing site availability..."
+        for i in {1..6}; do
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://telemetry.samuelojo.tech)
+          if [ "$response" = "200" ]; then
+            echo "Dashboard is live and returning 200 OK!"
+            exit 0
+          fi
+          echo "Attempt $i: Received HTTP $response, retrying in 5 seconds..."
+          sleep 5
+        done
+        echo "Error: Dashboard did not return 200 OK in time."
+        exit 1
