@@ -114,8 +114,18 @@ def get_historical_context(parquet_files, current_file, max_history=5):
       m_speed = df_prev["speed"].mean() if "speed" in df_prev.columns else 0.0
       max_g = df_prev["accelY"].abs().max() if "accelY" in df_prev.columns else 0.0
       off = bool(df_prev["out_of_track"].any()) if "out_of_track" in df_prev.columns else False
+      
+      # Extract lap time if present in parquet columns
+      lap_str = "N/A"
+      for col in ["lap_time", "lap_duration", "lapTime"]:
+        if col in df_prev.columns:
+          val = df_prev[col].iloc[-1] if not df_prev[col].empty else 0.0
+          if val > 0:
+            lap_str = f"{val:.3f}s"
+            break
+
       history_lines.append(
-          f"- Run {os.path.basename(fpath)} | Peak Speed: {p_speed:.1f} m/s | Mean Speed: {m_speed:.1f} m/s | Max G: {max_g:.2f} G | Off-track: {off}"
+          f"- Run {os.path.basename(fpath)} | Lap Time: {lap_str} | Peak Speed: {p_speed:.1f} m/s | Mean Speed: {m_speed:.1f} m/s | Max G: {max_g:.2f} G | Off-track: {off}"
       )
     except Exception:
       continue
@@ -146,6 +156,14 @@ def query_telemetry_context(df, file_path, total_runs, historical_context):
   lat_g = df["accelY"].abs().max() if "accelY" in df.columns else 0.0
   off_track = bool(df["out_of_track"].any()) if "out_of_track" in df.columns else False
   
+  lap_time_str = "Not Completed / In Progress"
+  for col in ["lap_time", "lap_duration", "lapTime"]:
+    if col in df.columns:
+      val = df[col].iloc[-1] if not df[col].empty else 0.0
+      if val > 0:
+        lap_time_str = f"{val:.3f} seconds"
+        break
+
   off_track_location = "None"
   if off_track and "progress" in df.columns:
     off_frames = df[df["out_of_track"] == True]
@@ -160,6 +178,7 @@ def query_telemetry_context(df, file_path, total_runs, historical_context):
     [ACTIVE RUN METRICS]
     - Total Training Runs So Far: {total_runs}
     - Active Log File: {os.path.basename(file_path)}
+    - Completed Lap Time: {lap_time_str}
     - Total Frames: {len(df)}
     - Peak Speed: {speed_max:.1f} m/s (Average Speed: {speed_mean:.1f} m/s)
     - Max Cornering G-Force: {lat_g:.2f} G
@@ -184,16 +203,19 @@ def get_or_create_summary(selected_file, parquet_files, df, total_events):
 
   historical_context = get_historical_context(parquet_files, selected_file)
   telemetry_context = query_telemetry_context(df, selected_file, total_events, historical_context)
+  
   summary_prompt = f"""
         You are an R&D simulation engineer explaining how an AI driving model is learning. 
         Provide a simple, clear 2-sentence summary using everyday language.
         
         {telemetry_context}
         
-        Instructions:
+        Strict Instructions:
+        - NEVER start your response with filler phrases like "Here is a 2-sentence summary", "Sure", or introductory text. Jump immediately into the analysis.
         - Call the agent solely "driver".
+        - If a lap time is recorded, include it explicitly.
         - If an off-track excursion occurred, mention ONLY the single most frequent or critical Monza corner where it happened based on the mapping.
-        - Include specific numbers and figures (such as peak speed, average speed, or G-forces) directly in the text.
+        - Include specific numbers and figures (such as lap time, peak speed, average speed, or G-forces) directly in the text.
         - Keep it simple so non-technical people can easily understand how performance compares to past runs.
         """
   try:
@@ -202,14 +224,14 @@ def get_or_create_summary(selected_file, parquet_files, df, total_events):
         model="llama3.1",
         messages=[{"role": "system", "content": summary_prompt}],
     )
-    summary_text = response["message"]["content"]
+    summary_text = response["message"]["content"].strip()
     
     with open(summary_file, "w", encoding="utf-8") as f:
       f.write(summary_text)
       
     return summary_text
   except Exception as e:
-    return f"Simulation not live right now / AI offline. Viewing historical parquet data. (Error: {e})"
+    return f"No live simulation right now — viewing historical parquet data. (AI Offline Error: {e})"
 
 
 def main():
@@ -221,7 +243,7 @@ def main():
 
   live_status = is_simulation_live(parquet_files)
   if not live_status:
-    st.warning("Simulation not live right now — you can check historical data from previous parquets below.")
+    st.warning("No live simulation right now — but you can view historical data and AI debriefs for each event below.")
 
   col1, col2, col3, col4 = st.columns(4)
 
@@ -382,7 +404,7 @@ def main():
             You are a helpful R&D simulation engineer explaining training progress over the pit radio. 
             Answer in clear, simple, non-technical language that is easy for anyone to understand. 
             Always refer to the AI model as "driver". 
-            Rely heavily on the history of previous runs to explain how the driver is improving or changing compared to earlier attempts.
+            Rely heavily on the history of previous runs and lap times to explain how the driver is improving or changing compared to earlier attempts.
             Always include exact numbers, stats, and figures from the data to support your answers. Use real Monza corner names when discussing track positions.
             
             Context provided:
@@ -411,7 +433,7 @@ def main():
                 {"role": "assistant", "content": reply}
             )
           except Exception as e:
-            error_msg = f"Simulation not live right now / AI offline. (Radio error: {e})"
+            error_msg = f"No live simulation right now / AI offline. (Radio error: {e})"
             st.markdown(error_msg)
             st.session_state.messages.append(
                 {"role": "assistant", "content": error_msg}
