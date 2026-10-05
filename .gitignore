@@ -60,3 +60,13 @@ MUJOCO_LOG.TXT
 output
 outputs
 assetto_corsa_gym.code-workspace
+
+# Large binaries and logs
+cloudflared.exe
+outputs/
+*.parquet
+*.summary.txt
+
+# Large track pickles
+DownloadedTracks/
+*.pkl
