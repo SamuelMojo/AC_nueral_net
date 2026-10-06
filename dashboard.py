@@ -97,8 +97,8 @@ def is_simulation_live(parquet_files, threshold_seconds=120):
   return (current_time - file_mtime) <= threshold_seconds
 
 
-def get_historical_context(parquet_files, current_file, max_history=5):
-  """Aggregates summary statistics from previous runs for historical trend comparison."""
+def get_historical_context(parquet_files, current_file, max_history=10):
+  """Aggregates summary statistics from the previous 10 runs for rolling memory comparison."""
   if not parquet_files:
     return "No historical run data available."
 
@@ -115,7 +115,6 @@ def get_historical_context(parquet_files, current_file, max_history=5):
       max_g = df_prev["accelY"].abs().max() if "accelY" in df_prev.columns else 0.0
       off = bool(df_prev["out_of_track"].any()) if "out_of_track" in df_prev.columns else False
       
-      # Extract lap time if present in parquet columns
       lap_str = "N/A"
       for col in ["lap_time", "lap_duration", "lapTime"]:
         if col in df_prev.columns:
@@ -184,24 +183,16 @@ def query_telemetry_context(df, file_path, total_runs, historical_context):
     - Max Cornering G-Force: {lat_g:.2f} G
     - Went Off Track: {off_track} (Primary Off-Track Corner: {off_track_location})
 
-    [PAST RUNS HISTORY]
+    [LAST 10 RUNS ROLLING MEMORY]
     {historical_context}
     """
   return context
 
 
-def get_or_create_summary(selected_file, parquet_files, df, total_events):
-  """Loads summary from disk if saved alongside parquet, or generates/saves via Ollama."""
+def generate_summary_text(selected_file, parquet_files, df, total_events):
+  """Generates summary via Ollama and saves to disk."""
   summary_file = selected_file + ".summary.txt"
-  
-  if os.path.exists(summary_file):
-    try:
-      with open(summary_file, "r", encoding="utf-8") as f:
-        return f.read()
-    except Exception:
-      pass
-
-  historical_context = get_historical_context(parquet_files, selected_file)
+  historical_context = get_historical_context(parquet_files, selected_file, max_history=10)
   telemetry_context = query_telemetry_context(df, selected_file, total_events, historical_context)
   
   summary_prompt = f"""
@@ -214,7 +205,7 @@ def get_or_create_summary(selected_file, parquet_files, df, total_events):
         - NEVER start your response with filler phrases like "Here is a 2-sentence summary", "Sure", or introductory text. Jump immediately into the analysis.
         - Call the agent solely "driver".
         - If a lap time is recorded, include it explicitly.
-        - If an off-track excursion occurred, mention ONLY the single most frequent or critical Monza corner where it happened based on the mapping.
+        - If an off-track excursion or wall crash occurred, mention ONLY the single most frequent or critical Monza corner where it happened based on the mapping.
         - Include specific numbers and figures (such as lap time, peak speed, average speed, or G-forces) directly in the text.
         - Keep it simple so non-technical people can easily understand how performance compares to past runs.
         """
@@ -231,7 +222,7 @@ def get_or_create_summary(selected_file, parquet_files, df, total_events):
       
     return summary_text
   except Exception as e:
-    return f"No live simulation right now — viewing historical parquet data. (AI Offline Error: {e})"
+    return f"AI Offline Error: {e}"
 
 
 def main():
@@ -243,7 +234,7 @@ def main():
 
   live_status = is_simulation_live(parquet_files)
   if not live_status:
-    st.warning("No live simulation right now — but you can view historical data and AI debriefs for each event below.")
+    st.warning("No live simulation right now — viewing historical data and manual debriefs.")
 
   col1, col2, col3, col4 = st.columns(4)
 
@@ -259,12 +250,7 @@ def main():
     )
 
   if total_events == 0:
-    st.info(
-        "No telemetry logs found in the outputs directory. Run a training session"
-        " to populate data."
-    )
-    time.sleep(3)
-    st.rerun()
+    st.info("No telemetry logs found in the outputs directory.")
     return
 
   selected_file = st.selectbox(
@@ -369,78 +355,88 @@ def main():
       st.plotly_chart(fig_reward, use_container_width=True)
 
   with chat_col:
-    st.subheader("Automated Engineer Brief")
+      st.subheader("Automated Engineer Brief")
 
-    summary_text = get_or_create_summary(selected_file, parquet_files, df, total_events)
-
-    st.markdown(
-        f"""
-        <div class="summary-box">
-            <strong>Run Analysis:</strong><br><br>
-            {summary_text}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("---")
-    st.subheader("Pit Radio Channel")
-
-    if "messages" not in st.session_state:
-      st.session_state.messages = []
-
-    for message in st.session_state.messages:
-      with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-    if user_prompt := st.chat_input("Ask engineer about session performance..."):
-      st.session_state.messages.append({"role": "user", "content": user_prompt})
-      with st.chat_message("user"):
-        st.markdown(user_prompt)
-
-      historical_context = get_historical_context(parquet_files, selected_file)
-      telemetry_context = query_telemetry_context(df, selected_file, total_events, historical_context)
-      system_prompt = f"""
-            You are a helpful R&D simulation engineer explaining training progress over the pit radio. 
-            Answer in clear, simple, non-technical language that is easy for anyone to understand. 
-            Always refer to the AI model as "driver". 
-            Rely heavily on the history of previous runs and lap times to explain how the driver is improving or changing compared to earlier attempts.
-            Always include exact numbers, stats, and figures from the data to support your answers. Use real Monza corner names when discussing track positions.
-            
-            Context provided:
-            {telemetry_context}
-            
-            Keep responses short, clear, and friendly.
-            """
-
-      with st.chat_message("assistant"):
-        with st.spinner("Analyzing telemetry..."):
+      summary_file = selected_file + ".summary.txt"
+      summary_text = ""
+      if os.path.exists(summary_file):
           try:
-            client = ollama.Client(host="http://100.72.210.89:11434")
-            response = client.chat(
-                model="llama3.1:latest",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                ]
-                + [
-                    {"role": m["role"], "content": m["content"]}
-                    for m in st.session_state.messages
-                ],
-            )
-            reply = response["message"]["content"]
-            st.markdown(reply)
-            st.session_state.messages.append(
-                {"role": "assistant", "content": reply}
-            )
-          except Exception as e:
-            error_msg = f"No live simulation right now / AI offline. (Radio error: {e})"
-            st.markdown(error_msg)
-            st.session_state.messages.append(
-                {"role": "assistant", "content": error_msg}
-            )
+              with open(summary_file, "r", encoding="utf-8") as f:
+                  summary_text = f.read()
+          except Exception:
+              pass
 
-  time.sleep(5)
-  st.rerun()
+      if summary_text:
+          st.markdown(
+              f"""
+              <div class="summary-box">
+                  <strong>Run Analysis:</strong><br><br>
+                  {summary_text}
+              </div>
+              """,
+              unsafe_allow_html=True,
+          )
+
+      if st.button("Generate AI Debrief for Selected Run"):
+          with st.spinner("Generating debriefing via Windows GPU..."):
+              summary_text = generate_summary_text(selected_file, parquet_files, df, total_events)
+              st.rerun()
+
+      st.markdown("---")
+      st.subheader("Pit Radio Channel")
+
+      if "messages" not in st.session_state:
+          st.session_state.messages = []
+
+      for message in st.session_state.messages:
+          with st.chat_message(message["role"]):
+              st.markdown(message["content"])
+
+      if user_prompt := st.chat_input("Ask engineer about session performance..."):
+          st.session_state.messages.append({"role": "user", "content": user_prompt})
+          with st.chat_message("user"):
+              st.markdown(user_prompt)
+
+          historical_context = get_historical_context(parquet_files, selected_file, max_history=10)
+          telemetry_context = query_telemetry_context(df, selected_file, total_events, historical_context)
+          system_prompt = f"""
+              You are a helpful R&D simulation engineer explaining training progress over the pit radio. 
+              Answer in clear, simple, non-technical language that is easy for anyone to understand. 
+              Always refer to the AI model as "driver". 
+              Rely heavily on the rolling memory history of the previous 10 runs and lap times to explain how the driver is improving, struggling, or repeatedly crashing into walls.
+              Always include exact numbers, stats, and figures from the data to support your answers. Use real Monza corner names when discussing track positions.
+              
+              Context provided:
+              {telemetry_context}
+              
+              Keep responses short, clear, and friendly.
+              """
+
+          with st.chat_message("assistant"):
+              with st.spinner("Analyzing telemetry across recent runs..."):
+                  try:
+                      client = ollama.Client(host="http://100.72.210.89:11434")
+                      response = client.chat(
+                          model="llama3.1:latest",
+                          messages=[
+                              {"role": "system", "content": system_prompt},
+                          ]
+                          + [
+                              {"role": m["role"], "content": m["content"]}
+                              for m in st.session_state.messages
+                          ],
+                      )
+                      reply = response["message"]["content"]
+                      st.markdown(reply)
+                      st.session_state.messages.append(
+                          {"role": "assistant", "content": reply}
+                      )
+                  except Exception as e:
+                      error_msg = f"AI offline. (Radio error: {e})"
+                      st.markdown(error_msg)
+                      st.session_state.messages.append(
+                          {"role": "assistant", "content": error_msg}
+                      )
 
 
 if __name__ == "__main__":
