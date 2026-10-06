@@ -6,6 +6,20 @@ import ollama
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit as st
+from streamlit_autorefresh import st_autorefresh
+
+
+
+# Streamlit Page Configuration
+st.set_page_config(
+    page_title="Assetto Corsa Telemetry Dashboard",
+    page_icon=None,
+    layout="wide",
+)
+
+# Automatically rerun the script every 10 seconds to pull fresh data from S3
+count = st_autorefresh(interval=10000, limit=None, key="datarefresh")
 
 # Streamlit Page Configuration
 st.set_page_config(
