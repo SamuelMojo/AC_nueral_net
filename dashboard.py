@@ -219,9 +219,9 @@ def get_or_create_summary(selected_file, parquet_files, df, total_events):
         - Keep it simple so non-technical people can easily understand how performance compares to past runs.
         """
   try:
-    client = ollama.Client(host="https://defence-heater-attorneys-rounds.trycloudflare.com") 
+    client = ollama.Client(host="http://100.72.210.89:11434") 
     response = client.chat(
-        model="llama3.1",
+        model="llama3.1:latest",
         messages=[{"role": "system", "content": summary_prompt}],
     )
     summary_text = response["message"]["content"].strip()
@@ -416,9 +416,9 @@ def main():
       with st.chat_message("assistant"):
         with st.spinner("Analyzing telemetry..."):
           try:
-            client = ollama.Client(host="https://defence-heater-attorneys-rounds.trycloudflare.com")
+            client = ollama.Client(host="http://100.72.210.89:11434")
             response = client.chat(
-                model="llama3.1",
+                model="llama3.1:latest",
                 messages=[
                     {"role": "system", "content": system_prompt},
                 ]
