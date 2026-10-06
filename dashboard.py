@@ -93,16 +93,27 @@ def identify_monza_corner(progress_val):
 
 @st.cache_data(ttl=5)
 def load_all_runs():
-    """Scans S3 bucket and loads all parquet files for global aggregation."""
+    """Scans S3 bucket and loads all parquet files safely, handling active uploads."""
     try:
         fs = s3fs.S3FileSystem(anon=False)
         files = fs.glob(f"{S3_BUCKET_PATH}/**/*.parquet")
         if not files:
             return []
 
+        valid_files = []
+        for f in files:
+            try:
+                info = fs.info(f)
+                mtime = info.get("LastModified")
+                if mtime:
+                    valid_files.append((f, mtime))
+            except Exception:
+                # Skip files that are currently uploading or temporarily locked
+                continue
+
         # Sort by AWS LastModified time (newest first)
-        files.sort(key=lambda x: fs.info(x)["LastModified"], reverse=True)
-        return [f"s3://{f}" for f in files]
+        valid_files.sort(key=lambda x: x[1], reverse=True)
+        return [f"s3://{f}" for f, _ in valid_files]
     except Exception as e:
         st.error(f"S3 Connection Error: {e}")
         return []
