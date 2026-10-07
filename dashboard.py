@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # Automatically rerun the script every 10 seconds to pull fresh data from S3
-count = st_autorefresh(interval=10000, limit=None, key="datarefresh")
+count = st_autorefresh(interval=60000, limit=None, key="datarefresh")
 
 # Custom CSS for Square Tiles Styling (Fastlytics / Modern Dark Theme Style)
 st.markdown(
