@@ -414,11 +414,7 @@ def main():
                 unsafe_allow_html=True,
             )
 
-        # Wrap the debrief button in a form to prevent form-less button refresh glitches
-        with st.form(key="debrief_form"):
-            debrief_button = st.form_submit_button(label="Generate AI Debrief for Selected Run")
-
-        if debrief_button:
+        if st.button("Generate AI Debrief for Selected Run", key="gen_debrief_btn"):
             with st.spinner("Generating debriefing via Windows GPU..."):
                 summary_text = generate_summary_text(selected_file, parquet_files, df, total_events)
                 st.rerun()
@@ -433,13 +429,11 @@ def main():
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-        with st.form(key="pit_radio_form", clear_on_submit=True):
-            user_prompt = st.text_input("Ask engineer about session performance...")
-            submit_button = st.form_submit_button(label="Send to Pit Radio")
-
-        if submit_button and user_prompt:
+        if user_prompt := st.chat_input("Ask engineer about session performance...", key="pit_radio_input"):
             st.session_state.messages.append({"role": "user", "content": user_prompt})
-            
+            with st.chat_message("user"):
+                st.markdown(user_prompt)
+
             historical_context = get_historical_context(parquet_files, selected_file, max_history=10)
             telemetry_context = query_telemetry_context(df, selected_file, total_events, historical_context)
             system_prompt = f"""
@@ -455,30 +449,31 @@ def main():
                 Keep responses short, clear, and friendly.
                 """
 
-            with st.spinner("Analyzing telemetry across recent runs..."):
-                try:
-                    client = ollama.Client(host="http://100.72.210.89:11434")
-                    response = client.chat(
-                        model="llama3.1:latest",
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                        ]
-                        + [
-                            {"role": m["role"], "content": m["content"]}
-                            for m in st.session_state.messages
-                        ],
-                    )
-                    reply = response["message"]["content"]
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": reply}
-                    )
-                    st.rerun()
-                except Exception as e:
-                    error_msg = f"AI offline. (Radio error: {e})"
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": error_msg}
-                    )
-                    st.rerun()
+            with st.chat_message("assistant"):
+                with st.spinner("Analyzing telemetry across recent runs..."):
+                    try:
+                        client = ollama.Client(host="http://100.72.210.89:11434")
+                        response = client.chat(
+                            model="llama3.1:latest",
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                            ]
+                            + [
+                                {"role": m["role"], "content": m["content"]}
+                                for m in st.session_state.messages
+                            ],
+                        )
+                        reply = response["message"]["content"]
+                        st.markdown(reply)
+                        st.session_state.messages.append(
+                            {"role": "assistant", "content": reply}
+                        )
+                    except Exception as e:
+                        error_msg = f"AI offline. (Radio error: {e})"
+                        st.markdown(error_msg)
+                        st.session_state.messages.append(
+                            {"role": "assistant", "content": error_msg}
+                        )
 
 
 if __name__ == "__main__":
