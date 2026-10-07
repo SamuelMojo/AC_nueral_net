@@ -6,12 +6,9 @@ import ollama
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-
-
-# Streamlit Page Configuration
+# Streamlit Page Configuration (Must be the absolute first Streamlit command)
 st.set_page_config(
     page_title="Assetto Corsa Telemetry Dashboard",
     page_icon=None,
@@ -20,13 +17,6 @@ st.set_page_config(
 
 # Automatically rerun the script every 10 seconds to pull fresh data from S3
 count = st_autorefresh(interval=10000, limit=None, key="datarefresh")
-
-# Streamlit Page Configuration
-st.set_page_config(
-    page_title="Assetto Corsa Telemetry Dashboard",
-    page_icon=None,
-    layout="wide",
-)
 
 # Custom CSS for Square Tiles Styling (Fastlytics / Modern Dark Theme Style)
 st.markdown(
@@ -108,10 +98,8 @@ def load_all_runs():
                 if mtime:
                     valid_files.append((f, mtime))
             except Exception:
-                # Skip files that are currently uploading or temporarily locked
                 continue
 
-        # Sort by AWS LastModified time (newest first)
         valid_files.sort(key=lambda x: x[1], reverse=True)
         return [f"s3://{f}" for f, _ in valid_files]
     except Exception as e:
@@ -120,7 +108,6 @@ def load_all_runs():
 
 
 def is_simulation_live(parquet_files, threshold_seconds=120):
-    """Checks if the most recent S3 parquet file was modified within the threshold."""
     if not parquet_files:
         return False
     try:
@@ -137,7 +124,6 @@ def is_simulation_live(parquet_files, threshold_seconds=120):
 
 
 def get_historical_context(parquet_files, current_file, max_history=10):
-    """Aggregates summary statistics from the previous 10 runs for rolling memory comparison."""
     if not parquet_files:
         return "No historical run data available."
 
@@ -176,7 +162,6 @@ def get_historical_context(parquet_files, current_file, max_history=10):
 
 
 def get_reward_progression(parquet_files):
-    """Extracts cumulative reward trends across all available runs for macro convergence plotting."""
     run_data = []
     fs = s3fs.S3FileSystem(anon=False)
     sorted_files = list(reversed(parquet_files))
@@ -304,7 +289,6 @@ def main():
         format_func=lambda x: os.path.basename(x),
     )
     
-    # Safely load selected parquet via s3fs file handle
     try:
         fs = s3fs.S3FileSystem(anon=False)
         clean_selected = selected_file.replace("s3://", "")
