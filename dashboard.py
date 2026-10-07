@@ -15,8 +15,8 @@ st.set_page_config(
     layout="wide",
 )
 
-# Automatically rerun the script every 10 seconds to pull fresh data from S3
-count = st_autorefresh(interval=600000, limit=None, key="datarefresh")
+# Automatically rerun the script every 30 seconds to pull fresh data without cutting off AI generation
+count = st_autorefresh(interval=30000, limit=None, key="datarefresh")
 
 # Custom CSS for Square Tiles Styling (Fastlytics / Modern Dark Theme Style)
 st.markdown(
@@ -428,15 +428,19 @@ def main():
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
+        # Render prior messages securely from session state
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-        if user_prompt := st.chat_input("Ask engineer about session performance..."):
-            st.session_state.messages.append({"role": "user", "content": user_prompt})
-            with st.chat_message("user"):
-                st.markdown(user_prompt)
+        # Wrap chat input in a form so background auto-refreshes don't wipe active states
+        with st.form(key="pit_radio_form", clear_on_submit=True):
+            user_prompt = st.text_input("Ask engineer about session performance...")
+            submit_button = st.form_submit_button(label="Send to Pit Radio")
 
+        if submit_button and user_prompt:
+            st.session_state.messages.append({"role": "user", "content": user_prompt})
+            
             historical_context = get_historical_context(parquet_files, selected_file, max_history=10)
             telemetry_context = query_telemetry_context(df, selected_file, total_events, historical_context)
             system_prompt = f"""
@@ -452,31 +456,30 @@ def main():
                 Keep responses short, clear, and friendly.
                 """
 
-            with st.chat_message("assistant"):
-                with st.spinner("Analyzing telemetry across recent runs..."):
-                    try:
-                        client = ollama.Client(host="http://100.72.210.89:11434")
-                        response = client.chat(
-                            model="llama3.1:latest",
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                            ]
-                            + [
-                                {"role": m["role"], "content": m["content"]}
-                                for m in st.session_state.messages
-                            ],
-                        )
-                        reply = response["message"]["content"]
-                        st.markdown(reply)
-                        st.session_state.messages.append(
-                            {"role": "assistant", "content": reply}
-                        )
-                    except Exception as e:
-                        error_msg = f"AI offline. (Radio error: {e})"
-                        st.markdown(error_msg)
-                        st.session_state.messages.append(
-                            {"role": "assistant", "content": error_msg}
-                        )
+            with st.spinner("Analyzing telemetry across recent runs..."):
+                try:
+                    client = ollama.Client(host="http://100.72.210.89:11434")
+                    response = client.chat(
+                        model="llama3.1:latest",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                        ]
+                        + [
+                            {"role": m["role"], "content": m["content"]}
+                            for m in st.session_state.messages
+                        ],
+                    )
+                    reply = response["message"]["content"]
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": reply}
+                    )
+                    st.rerun()
+                except Exception as e:
+                    error_msg = f"AI offline. (Radio error: {e})"
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": error_msg}
+                    )
+                    st.rerun()
 
 
 if __name__ == "__main__":
