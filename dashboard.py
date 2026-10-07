@@ -6,7 +6,6 @@ import ollama
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 
 # Streamlit Page Configuration (Must be the absolute first Streamlit command)
 st.set_page_config(
@@ -14,9 +13,6 @@ st.set_page_config(
     page_icon=None,
     layout="wide",
 )
-
-# Automatically rerun the script every 30 seconds to pull fresh data without cutting off AI generation
-count = st_autorefresh(interval=30000, limit=None, key="datarefresh")
 
 # Custom CSS for Square Tiles Styling (Fastlytics / Modern Dark Theme Style)
 st.markdown(
@@ -286,6 +282,7 @@ def main():
     selected_file = st.selectbox(
         "Select Training Run Log",
         parquet_files,
+        index=0,
         format_func=lambda x: os.path.basename(x),
     )
     
@@ -428,12 +425,10 @@ def main():
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
-        # Render prior messages securely from session state
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-        # Wrap chat input in a form so background auto-refreshes don't wipe active states
         with st.form(key="pit_radio_form", clear_on_submit=True):
             user_prompt = st.text_input("Ask engineer about session performance...")
             submit_button = st.form_submit_button(label="Send to Pit Radio")
