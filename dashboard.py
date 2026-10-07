@@ -414,7 +414,11 @@ def main():
                 unsafe_allow_html=True,
             )
 
-        if st.button("Generate AI Debrief for Selected Run"):
+        # Wrap the debrief button in a form to prevent form-less button refresh glitches
+        with st.form(key="debrief_form"):
+            debrief_button = st.form_submit_button(label="Generate AI Debrief for Selected Run")
+
+        if debrief_button:
             with st.spinner("Generating debriefing via Windows GPU..."):
                 summary_text = generate_summary_text(selected_file, parquet_files, df, total_events)
                 st.rerun()
