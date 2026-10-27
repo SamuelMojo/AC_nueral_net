@@ -23,24 +23,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install streamlit pandas plotly ollama pyarrow pytest
 
-    - name: Deploy to AWS EC2 via SSH
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        script: |
-          cd ~/assetto_corsa_gym
-          git pull origin main
-          source venv/bin/activate
-          pip install -r requirements.txt || pip install streamlit pandas plotly ollama pyarrow
-          
-          # Gracefully restart Streamlit inside your existing tmux session
-          tmux send-keys -t dashboard C-c
-          tmux send-keys -t dashboard "cd ~/assetto_corsa_gym && source venv/bin/activate && streamlit run dashboard.py --server.port 8501 --server.address 127.0.0.1" C-m
-
+    # Deployment is done by the watchdog on the server (~/auto_pull.sh): it polls GitHub every
+    # 30s, pulls new commits and restarts the dashboard. No SSH key is stored in GitHub.
     - name: Post-Deployment Smoke Test
       run: |
+        echo "Waiting 45s for the server watchdog to pull and restart the dashboard..."
+        sleep 45
         echo "Testing site availability..."
         for i in {1..6}; do
           response=$(curl -s -o /dev/null -w "%{http_code}" https://telemetry.samuelojo.tech)
