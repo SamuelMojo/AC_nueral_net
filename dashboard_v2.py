@@ -434,11 +434,19 @@ def main():
 
     all_runs, _ = list_runs()
     sessions = list(dict.fromkeys(r["session"] for r in all_runs))  # newest first
-    scope = st.sidebar.selectbox(
-        "Training session",
-        [CURRENT, ALL] + sessions,
-        format_func=lambda s: {CURRENT: "Current session (resets each restart)", ALL: "All sessions"}.get(s, s),
-    )
+    live = bool(all_runs) and (pd.Timestamp.now(tz="UTC").timestamp() - all_runs[0]["mtime"]) <= LIVE_THRESHOLD_S
+    # "Current session" only exists while the simulation is actually uploading laps.
+    choices = ([CURRENT] if live else []) + [ALL] + sessions
+    default = 0 if live else (1 if sessions else 0)  # offline: open on the most recent finished session
+
+    def label(s):
+        if s == CURRENT:
+            return "Current session (live, resets each restart)"
+        if s == ALL:
+            return "All sessions"
+        return f"{s} (last session)" if (not live and s == sessions[0]) else s
+
+    scope = st.sidebar.selectbox("Training session", choices, index=default, format_func=label)
     runs, _ = scoped_runs(scope)
     options = [LATEST] + [r["path"] for r in runs]
     names = {r["path"]: r["name"] for r in runs}
