@@ -70,3 +70,4 @@ outputs/
 # Large track pickles
 DownloadedTracks/
 *.pkl
+*.pem

@@ -23,7 +23,7 @@ aws ec2 wait instance-running --instance-ids $InstanceId
 
 # 3. Launch background S3 sync watcher
 Write-Host "Launching background S3 sync watcher..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "python sync_outputs.py"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "python sync_outputs_v2.py"
 
 # 4. Start local training script
 Write-Host "Starting local training script (train.py)..." -ForegroundColor Green
