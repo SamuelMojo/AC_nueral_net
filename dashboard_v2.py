@@ -447,15 +447,7 @@ def main():
         return f"{s} (last session)" if (not live and s == sessions[0]) else s
 
     scope = st.sidebar.selectbox("Training session", choices, index=default, format_func=label)
-    runs, _ = scoped_runs(scope)
-    options = [LATEST] + [r["path"] for r in runs]
-    names = {r["path"]: r["name"] for r in runs}
-    selected_key = st.selectbox(
-        "Select Training Run Log",
-        options,
-        index=0,
-        format_func=lambda k: "Latest run (follows live)" if k == LATEST else names.get(k, k),
-    )
+    selected_key = LATEST  # always the newest run of the chosen session; no second file dropdown
     st.markdown("---")
 
     chart_col, chat_col = st.columns([1.3, 0.7])
@@ -467,10 +459,10 @@ def main():
 
     with chart_col:
         if hasattr(st, "fragment"):  # Streamlit >= 1.37
-            live = st.fragment(run_every=f"{interval}s" if auto else None)(render_live)
+            live_panel = st.fragment(run_every=f"{interval}s" if auto else None)(render_live)
         else:
-            live = render_live
-        live(selected_key, scope)
+            live_panel = render_live
+        live_panel(selected_key, scope)
 
 
 if __name__ == "__main__":
